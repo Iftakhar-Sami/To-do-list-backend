@@ -7,7 +7,6 @@ const express= require('express');
 
 const app = express();
 app.use(express.json());
-let uid=1;
 
 
 
@@ -27,6 +26,13 @@ const verifyToken= (req,res,next)=>{
     }catch(error){
         return res.status(403).json({ msg: "Invalid or expired token." });
     }
+}
+
+const adminCheck = (req,res,next)=>{
+    if(req.user.role.toLowerCase() !== 'admin'){
+        return res.status(403).json({msg:"Access Denied: Admin only"});
+    }
+    next();
 }
 
 const validateStatus=(req,res,next)=>{
@@ -83,13 +89,23 @@ app.post('/api/login',async(req,res)=>{
         const payload ={
             id: user.id,
             name: user.name,
-            email: user.email
+            email: user.email,
+            role: user.role
         }
         const token = jwt.sign(payload,process.env.JWT_SECRET,{expiresIn:"1h"});
 
         return res.status(200).json({msg:"login successful", token});
     }catch(error){
         return res.status(500).json({msg:"internal server error", err:`${error}`});
+    }
+});
+
+app.get('/api/users',verifyToken,adminCheck,async(req,res)=>{
+    try{
+        const [users] = await pool.query("SELECT id,name,email,role FROM users");
+        res.status(200).json(users);
+    }catch(error){
+        res.status(500).json({msg:"internal server error", err:`${error}`});
     }
 });
 
@@ -174,6 +190,11 @@ app.put('/api/tasks/:id',verifyToken,validateStatus,async(req,res)=>{
             fields.push("status=?");
             values.push(status.toUpperCase());
         }
+
+        if(fields.length === 0) {
+            return res.status(400).json({msg: "Please provide at least one field to update"});
+        }
+        
         const sql = `UPDATE tasks 
                     SET ${fields.join(", ")} 
                     WHERE id=? AND user_id=?`;
